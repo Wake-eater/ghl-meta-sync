@@ -1,23 +1,24 @@
 async function main() {
     console.log('Starting custom app...');
 
-    const contextReady = await getGHLContext();
+    try {
+        const contextReady = await getGHLContext();
 
-    if (contextReady) {
-        console.log('GHL context successfully retrieved.');
+        if (contextReady) {
+            console.log('GHL context successfully retrieved.');
 
-        // Get the location ID from the GHL context
-        const currentLocationId = GHL.location.id;
+            // Get the location ID from the GHL context
+            const currentLocationId = GHL.location.id;
 
-        const appId = '68ae7013bb7027c6c3cbf9aa';
-        
-        // This is the CORRECT API path based on your cURL test
-        const apiPath = `/locations/${currentLocationId}/customFields?model=contact`;
-        
-        // Use the GHL Proxy with the correct full path
-        const apiUrl = `https://services.leadconnectorhq.com/api/v1/apps/${appId}/proxy?path=${encodeURIComponent(apiPath)}`;
+            // Your app ID from the GHL Developer portal
+            const appId = '68ae7013bb7027c6c3cbf9aa';
 
-        try {
+            // Construct the API path for the contacts endpoint
+            const apiPath = `locations/${currentLocationId}/contacts`;
+
+            // Use the GHL Proxy, passing the full path as the 'path' query parameter
+            const apiUrl = `https://services.leadconnectorhq.com/api/v1/apps/${appId}/proxy?path=${encodeURIComponent(apiPath)}`;
+
             const response = await fetch(apiUrl, {
                 method: 'GET',
                 headers: {
@@ -28,16 +29,16 @@ async function main() {
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to fetch data');
+                throw new Error(errorData.message || 'Failed to fetch contact data from proxy');
             }
 
             const data = await response.json();
-            console.log('Successfully fetched data:', data);
-            
-        } catch (error) {
-            console.error('API call failed:', error);
+            console.log('Successfully fetched contact data:', data);
+
+        } else {
+            console.error('Failed to initialize GHL context. App cannot function.');
         }
-    } else {
-        console.error('Failed to initialize GHL context. App cannot function.');
+    } catch (error) {
+        console.error('API call failed:', error);
     }
 }
