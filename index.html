@@ -1,4 +1,19 @@
 // GHL API Integration
+let currentLocationId = '';
+let apiToken = '';
+let contactsData = [];
+let FIELD_MAPPING = {
+    hashed_email: 'hashed_email',
+    hashed_phone: 'hashed_phone',
+    first_name: 'firstName',
+    last_name: 'lastName',
+    city: 'city',
+    state: 'state',
+    country: 'country',
+    zip: 'postalCode'
+};
+
+// GHL API Integration
 async function getGHLContext() {
     try {
         // Method 1: Get from URL parameters
@@ -51,8 +66,8 @@ async function getAccessToken() {
         if (session) return session;
     } catch (e) {}
     
-    // Method 3: From cookies
-    const token = getCookie('access_token') || getCookie('auth_token');
+    // Method 3: From cookies - try multiple possible names
+    const token = getCookie('token') || getCookie('auth_token') || getCookie('access_token');
     if (token) return token;
     
     // Method 4: Make a request to get current session
@@ -81,10 +96,10 @@ function getCookie(name) {
 // Fetch real contacts from GHL API
 async function fetchGHLContacts(limit = 100, offset = 0) {
     try {
-        // Build the API URL
+        // Build the API URL - FIXED: removed extra space and trailing slash
         const baseUrl = 'https://services.leadconnectorhq.com';
-        const apiUrl = `${baseUrl}/contacts/?locationId=${currentLocationId}&limit=${limit}&offset=${offset}`;
-        
+        const apiUrl = `${baseUrl}/contacts?locationId=${currentLocationId}&limit=${limit}&offset=${offset}`;
+
         // Make the API call
         const response = await fetch(apiUrl, {
             method: 'GET',
@@ -188,142 +203,4 @@ function displayFieldPreview(contacts) {
         html += `</td>`;
         html += `<td style="padding: 10px; border: 1px solid #ddd; font-family: monospace; font-size: 12px;">`;
         if (fieldData.sample) {
-            // Show first 20 chars of the hash
-            html += `${fieldData.sample.substring(0, 20)}...`;
-        } else {
-            html += '<em style="color: #999;">No data</em>';
-        }
-        html += `</td>`;
-        html += '</tr>';
-    }
-    
-    html += '</tbody></table>';
-    
-    // Add sample CSV preview
-    if (contacts.length > 0 && foundCount > 0) {
-        html += '<h3 style="margin-top: 20px; margin-bottom: 15px;">Sample CSV Output (First Row):</h3>';
-        html += '<pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px;">';
-        
-        const sampleRow = transformToMetaFormat(contacts.slice(0, 1))[0];
-        if (sampleRow) {
-            // Show headers
-            html += Object.keys(FIELD_MAPPING).join(',') + '\n';
-            // Show first row data
-            html += Object.keys(FIELD_MAPPING).map(field => {
-                const value = sampleRow[field] || '';
-                return value ? value.substring(0, 15) + '...' : '(empty)';
-            }).join(',');
-        }
-        
-        html += '</pre>';
-    }
-    
-    fieldsList.innerHTML = html;
-    
-    // Enable export if we have minimum fields
-    const exportBtn = document.getElementById('exportBtn');
-    exportBtn.disabled = foundCount < 1;
-    
-    document.getElementById('hashedFields').textContent = foundCount;
-}
-
-function getFieldSample(contacts, fieldName) {
-    for (const contact of contacts) {
-        // Check custom fields array
-        if (contact.customFields && Array.isArray(contact.customFields)) {
-            const field = contact.customFields.find(f => f.key === fieldName || f.id === fieldName);
-            if (field && field.value) {
-                return { found: true, sample: field.value };
-            }
-        }
-        
-        // Check custom field object
-        if (contact.customField && typeof contact.customField === 'object') {
-            if (contact.customField[fieldName]) {
-                return { found: true, sample: contact.customField[fieldName] };
-            }
-        }
-        
-        // Check direct properties
-        if (contact[fieldName]) {
-            return { found: true, sample: contact[fieldName] };
-        }
-    }
-    
-    return { found: false, sample: null };
-}
-
-// Transform contacts to Meta format
-function transformToMetaFormat(contacts) {
-    return contacts
-        .filter(contact => {
-            // Must have at least email or phone
-            const emailField = getContactField(contact, 'hashed_email');
-            const phoneField = getContactField(contact, 'hashed_phone');
-            return emailField || phoneField;
-        })
-        .map(contact => {
-            const row = {};
-            for (const [metaField, ghlField] of Object.entries(FIELD_MAPPING)) {
-                row[metaField] = getContactField(contact, ghlField) || '';
-            }
-            return row;
-        });
-}
-
-function getContactField(contact, fieldName) {
-    // Check custom fields array
-    if (contact.customFields && Array.isArray(contact.customFields)) {
-        const field = contact.customFields.find(f => f.key === fieldName || f.id === fieldName);
-        if (field) return field.value;
-    }
-    
-    // Check custom field object
-    if (contact.customField && typeof contact.customField === 'object') {
-        if (contact.customField[fieldName]) {
-            return contact.customField[fieldName];
-        }
-    }
-    
-    // Check direct properties
-    return contact[fieldName] || '';
-}
-
-// Update the refreshFields function
-async function refreshFields() {
-    showLoading('Fetching contact data...');
-    
-    try {
-        // Get location context first
-        await getGHLContext();
-        
-        if (!currentLocationId) {
-            showError('Unable to determine location. Please try refreshing the page.');
-            hideLoading();
-            return;
-        }
-        
-        // Fetch sample contacts
-        const contacts = await fetchGHLContacts(20); // Get 20 samples for preview
-        
-        if (contacts.length === 0) {
-            showError('No contacts found. Please check your permissions and try again.');
-            hideLoading();
-            return;
-        }
-        
-        contactsData = contacts;
-        
-        // Display field mapping and preview
-        displayFieldPreview(contacts);
-        updateStatistics(contacts);
-        
-        hideLoading();
-        showSuccess(`Found ${contacts.length} sample contacts. Ready to export!`);
-        
-    } catch (error) {
-        hideLoading();
-        showError('Failed to fetch contacts: ' + error.message);
-        console.error('Refresh error:', error);
-    }
-}
+            // Show first 20 chars of the
