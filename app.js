@@ -152,7 +152,8 @@ async function fetchGHLContacts(limit = 50, offset = 0) {
     try {
         // Use GHL's services endpoint
         const baseUrl = 'https://services.leadconnectorhq.com';
-        const apiUrl = `${baseUrl}/contacts?locationId=${currentLocationId}&limit=${limit}&offset=${offset}`;
+        const appId = '68ae7013bb7027c6c3cbf9aa';
+        const apiUrl = `https://services.leadconnectorhq.com/api/v1/apps/${appId}/proxy?path=/contacts&locationId=${currentLocationId}&limit=${limit}&offset=${offset}`;
 
         console.log('Fetching GHL contacts:', apiUrl);
         
