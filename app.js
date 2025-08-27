@@ -1,18 +1,21 @@
 async function main() {
     console.log('Starting custom app...');
-    
+
     const contextReady = await getGHLContext();
-    
+
     if (contextReady) {
         console.log('GHL context successfully retrieved.');
-        
-        const appId = 'YOUR_APP_ID';
+
+        // Get the location ID from the GHL context
+        const currentLocationId = GHL.location.id;
+
+        const appId = '68ae7013bb7027c6c3cbf9aa';
         
         // This is the CORRECT API path based on your cURL test
         const apiPath = `/locations/${currentLocationId}/customFields?model=contact`;
         
         // Use the GHL Proxy with the correct full path
-        const apiUrl = `https://services.leadconnectorhq.com/api/v1/apps/${appId}/proxy?path=${apiPath}`;
+        const apiUrl = `https://services.leadconnectorhq.com/api/v1/apps/${appId}/proxy?path=${encodeURIComponent(apiPath)}`;
 
         try {
             const response = await fetch(apiUrl, {
