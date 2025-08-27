@@ -14,10 +14,10 @@ async function main() {
         
         // Step 2: Make the API call using the GHL Proxy
         // Replace 'YOUR_APP_ID' with your actual app ID from the custom app settings
-        const appId = 'YOUR_APP_ID';
+        const appId = '68ae7013bb7027c6c3cbf9aa';
         
         // This is the API endpoint we want to hit, e.g., to get a list of contacts
-        const apiPath = `/contacts/search`;
+        const apiPath = '/customFields?model=contact';
         
         // The URL for the API call MUST use the GHL proxy
         // We pass the real API path and the locationId as query parameters
