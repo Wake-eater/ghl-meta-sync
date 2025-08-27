@@ -1,6 +1,6 @@
 // Global variables to store the location ID and API token
 let currentLocationId = 'jXDdl77Ej0xMJdUeEfYo';
-let apiToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJsb2NhdGlvbl9pZCI6ImpYRGRsNzdFajB4TUpkVWVFZllvIiwidmVyc2lvbiI6MSwiaWF0IjoxNzUwMzU4MTk4NDg3LCJzdWIiOiJtY1VVUElISnU5UWRIT0tBbWJhTiJ9.9pdhqUbxR3tbn2UjJALFWR1Yr6CogYuUj9LJ2Vh-jGU';
+let apiToken = 'pit-84c5455f-90a3-4991-b9b2-826b5c2468c1';
 
 // Main function to initialize the app and handle all logic
 async function main() {
@@ -18,6 +18,7 @@ async function main() {
         
         // This is the API endpoint we want to hit, e.g., to get a list of contacts
         const apiPath = '/customFields?model=contact';
+        const apiPath = `/customFields?model=contact`;
         
         // The URL for the API call MUST use the GHL proxy
         // We pass the real API path and the locationId as query parameters
