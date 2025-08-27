@@ -2,7 +2,7 @@
 let currentLocationId = '';
 let apiToken = '';
 let contactsData = [];
-let FIELD_MAPPING = {
+const FIELD_MAPPING = {
     hashed_email: 'hashed_email',
     hashed_phone: 'hashed_phone',
     first_name: 'firstName',
@@ -160,7 +160,9 @@ async function fetchAllContacts() {
                 
                 // Update progress
                 showLoading(`Fetched ${allContacts.length} contacts...`);
-                document.getElementById('totalContacts').textContent = allContacts.length;
+                if (document.getElementById('totalContacts')) {
+                    document.getElementById('totalContacts').textContent = allContacts.length;
+                }
                 
                 // Check if we have more
                 hasMore = batch.length === limit;
@@ -177,6 +179,8 @@ async function fetchAllContacts() {
 // Check and display field preview
 function displayFieldPreview(contacts) {
     const fieldsList = document.getElementById('fieldsList');
+    if (!fieldsList) return;
+    
     let html = '';
     let foundCount = 0;
     
@@ -199,8 +203,233 @@ function displayFieldPreview(contacts) {
         html += `<td style="padding: 10px; border: 1px solid #ddd;"><strong>${metaField.toUpperCase()}</strong></td>`;
         html += `<td style="padding: 10px; border: 1px solid #ddd;">${ghlField}</td>`;
         html += `<td style="padding: 10px; border: 1px solid #ddd;">`;
-        html += `<span class="badge ${hasField ? 'badge-success' : 'badge-error'}">${hasField ? '✓ Found' : '✗ Missing'}</span>`;
+        html += `<span style="padding: 4px 8px; border-radius: 4px; background: ${hasField ? '#d4edda' : '#f8d7da'}; color: ${hasField ? '#155724' : '#721c24'};">${hasField ? '✓ Found' : '✗ Missing'}</span>`;
         html += `</td>`;
         html += `<td style="padding: 10px; border: 1px solid #ddd; font-family: monospace; font-size: 12px;">`;
         if (fieldData.sample) {
-            // Show first 20 chars of the
+            html += `${fieldData.sample.substring(0, 30)}${fieldData.sample.length > 30 ? '...' : ''}`;
+        } else {
+            html += '<em style="color: #999;">No data</em>';
+        }
+        html += `</td>`;
+        html += '</tr>';
+    }
+    
+    html += '</tbody></table>';
+    
+    // Add sample CSV preview
+    if (contacts.length > 0 && foundCount > 0) {
+        html += '<h3 style="margin-top: 20px; margin-bottom: 15px;">Sample CSV Output (First Row):</h3>';
+        html += '<pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px;">';
+        
+        const sampleRow = transformToMetaFormat(contacts.slice(0, 1))[0];
+        if (sampleRow) {
+            // Show headers
+            html += Object.keys(FIELD_MAPPING).join(',') + '\n';
+            // Show first row data
+            html += Object.keys(FIELD_MAPPING).map(field => {
+                const value = sampleRow[field] || '';
+                return value ? `"${value.replace(/"/g, '""')}"` : '""';
+            }).join(',');
+        }
+        
+        html += '</pre>';
+    }
+    
+    fieldsList.innerHTML = html;
+    
+    // Enable export if we have minimum fields
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) {
+        exportBtn.disabled = foundCount < 1;
+    }
+    
+    if (document.getElementById('hashedFields')) {
+        document.getElementById('hashedFields').textContent = foundCount;
+    }
+}
+
+function getFieldSample(contacts, fieldName) {
+    for (const contact of contacts) {
+        // Check custom fields array
+        if (contact.customFields && Array.isArray(contact.customFields)) {
+            const field = contact.customFields.find(f => f.key === fieldName || f.id === fieldName);
+            if (field && field.value) {
+                return { found: true, sample: field.value };
+            }
+        }
+        
+        // Check custom field object
+        if (contact.customField && typeof contact.customField === 'object') {
+            if (contact.customField[fieldName]) {
+                return { found: true, sample: contact.customField[fieldName] };
+            }
+        }
+        
+        // Check direct properties
+        if (contact[fieldName]) {
+            return { found: true, sample: contact[fieldName] };
+        }
+    }
+    
+    return { found: false, sample: null };
+}
+
+// Transform contacts to Meta format
+function transformToMetaFormat(contacts) {
+    return contacts
+        .filter(contact => {
+            // Must have at least email or phone
+            const emailField = getContactField(contact, 'hashed_email');
+            const phoneField = getContactField(contact, 'hashed_phone');
+            return emailField || phoneField;
+        })
+        .map(contact => {
+            const row = {};
+            for (const [metaField, ghlField] of Object.entries(FIELD_MAPPING)) {
+                row[metaField] = getContactField(contact, ghlField) || '';
+            }
+            return row;
+        });
+}
+
+function getContactField(contact, fieldName) {
+    // Check custom fields array
+    if (contact.customFields && Array.isArray(contact.customFields)) {
+        const field = contact.customFields.find(f => f.key === fieldName || f.id === fieldName);
+        if (field) return field.value;
+    }
+    
+    // Check custom field object
+    if (contact.customField && typeof contact.customField === 'object') {
+        if (contact.customField[fieldName]) {
+            return contact.customField[fieldName];
+        }
+    }
+    
+    // Check direct properties
+    return contact[fieldName] || '';
+}
+
+// Update the refreshFields function
+async function refreshFields() {
+    showLoading('Fetching contact data...');
+    
+    try {
+        // Get location context first
+        await getGHLContext();
+        
+        if (!currentLocationId) {
+            showError('Unable to determine location. Please try refreshing the page.');
+            hideLoading();
+            return;
+        }
+        
+        // Fetch sample contacts
+        const contacts = await fetchGHLContacts(20); // Get 20 samples for preview
+        
+        if (contacts.length === 0) {
+            showError('No contacts found. Please check your permissions and try again.');
+            hideLoading();
+            return;
+        }
+        
+        contactsData = contacts;
+        
+        // Display field mapping and preview
+        displayFieldPreview(contacts);
+        updateStatistics(contacts);
+        
+        hideLoading();
+        showSuccess(`Found ${contacts.length} sample contacts. Ready to export!`);
+        
+    } catch (error) {
+        hideLoading();
+        showError('Failed to fetch contacts: ' + error.message);
+        console.error('Refresh error:', error);
+    }
+}
+
+// Export to CSV function
+async function exportToMeta() {
+    showLoading('Exporting contacts...');
+    
+    try {
+        const contacts = await fetchAllContacts();
+        const rows = transformToMetaFormat(contacts);
+
+        if (rows.length === 0) {
+            showError('No valid contacts found for export.');
+            hideLoading();
+            return;
+        }
+
+        const csv = [
+            Object.keys(FIELD_MAPPING).join(','),
+            ...rows.map(row => Object.values(row).map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.setAttribute('href', url);
+        a.setAttribute('download', 'meta-audience-sync.csv');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        hideLoading();
+        showSuccess(`Exported ${rows.length} contacts successfully!`);
+
+    } catch (error) {
+        hideLoading();
+        showError('Export failed: ' + error.message);
+        console.error('Export error:', error);
+    }
+}
+
+// Utility functions for UI updates
+function showLoading(message) {
+    const loadingEl = document.getElementById('loadingMessage');
+    if (loadingEl) {
+        loadingEl.textContent = message;
+        loadingEl.style.display = 'block';
+    }
+}
+
+function hideLoading() {
+    const loadingEl = document.getElementById('loadingMessage');
+    if (loadingEl) {
+        loadingEl.style.display = 'none';
+    }
+}
+
+function showError(message) {
+    const errorEl = document.getElementById('errorMessage');
+    if (errorEl) {
+        errorEl.textContent = message;
+        errorEl.style.display = 'block';
+    }
+    setTimeout(() => {
+        if (errorEl) errorEl.style.display = 'none';
+    }, 5000);
+}
+
+function showSuccess(message) {
+    const successEl = document.getElementById('successMessage');
+    if (successEl) {
+        successEl.textContent = message;
+        successEl.style.display = 'block';
+    }
+    setTimeout(() => {
+        if (successEl) successEl.style.display = 'none';
+    }, 3000);
+}
+
+function updateStatistics(contacts) {
+    // Update any statistics display
+    if (document.getElementById('totalContacts')) {
+        document.getElementById('totalContacts').textContent = contacts.length;
+    }
+}
