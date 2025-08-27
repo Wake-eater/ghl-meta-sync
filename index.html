@@ -96,8 +96,8 @@ function getCookie(name) {
 // Fetch real contacts from GHL API
 async function fetchGHLContacts(limit = 100, offset = 0) {
     try {
-        // Build the API URL - FIXED: removed extra space and trailing slash
-        const baseUrl = 'https://services.leadconnectorhq.com';
+        // Build the API URL - FIXED: removed extra spaces
+        const baseUrl = 'https://services.leadconnectorhq.com';  // ✅ No trailing spaces
         const apiUrl = `${baseUrl}/contacts?locationId=${currentLocationId}&limit=${limit}&offset=${offset}`;
 
         // Make the API call
@@ -433,3 +433,18 @@ function updateStatistics(contacts) {
         document.getElementById('totalContacts').textContent = contacts.length;
     }
 }
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Add event listeners
+    const refreshBtn = document.getElementById('refreshBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', refreshFields);
+    }
+    
+    if (exportBtn) {
+        exportBtn.addEventListener('click', exportToMeta);
+    }
+});
