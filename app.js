@@ -7,21 +7,20 @@ async function main() {
         if (contextReady) {
             console.log('GHL context successfully retrieved.');
 
-            const appId = '68ae7013bb7027c6c3cbf9aa-metf55tl';
-            
-            // The API path for the contacts search endpoint. No locationId here.
+            // Retrieve the token from the GHL context
+            const apiToken = GHL.apiToken;
+            const appId = GHL.appId;
+
+            // The API path for the contacts search endpoint
             const apiPath = `contacts/search`;
             
             // Construct the full URL using the GHL Proxy
             const apiUrl = `https://services.leadconnectorhq.com/api/v1/apps/${appId}/proxy?path=${encodeURIComponent(apiPath)}`;
 
-            // You must define your private integration token here
-            const privateIntegrationToken = '7302d8fc-ba24-4cf8-9112-586e88f8280e';
-
             const response = await fetch(apiUrl, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${privateIntegrationToken}`,
+                    'Authorization': `Bearer ${apiToken}`,
                     'Version': '2021-07-28'
                 }
             });
