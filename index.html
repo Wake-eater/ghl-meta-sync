@@ -1,4 +1,4 @@
-// GHL API Integration
+// GHL Custom App Integration
 let currentLocationId = '';
 let apiToken = '';
 let contactsData = [];
@@ -13,77 +13,113 @@ const FIELD_MAPPING = {
     zip: 'postalCode'
 };
 
-// GHL API Integration
+// Initialize when GHL is ready
+if (window.GHL && window.GHL.onLoad) {
+    window.GHL.onLoad(function() {
+        initializeApp();
+    });
+} else {
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeApp();
+    });
+}
+
+function initializeApp() {
+    // Add event listeners
+    const refreshBtn = document.getElementById('refreshBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', refreshFields);
+    }
+    
+    if (exportBtn) {
+        exportBtn.addEventListener('click', exportToMeta);
+    }
+    
+    // Auto-refresh on load
+    refreshFields();
+}
+
+// GHL Context - Works with GHL's iframe environment
 async function getGHLContext() {
     try {
         // Method 1: Get from URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         currentLocationId = urlParams.get('locationId') || urlParams.get('location_id') || '';
         
-        // Method 2: Get from parent frame (if in iframe)
-        if (window.parent !== window) {
+        // Method 2: Get from parent frame (GHL iframe context)
+        if ((!currentLocationId || currentLocationId === 'null') && window.parent !== window) {
             try {
-                const parentUrl = new URL(window.parent.location.href);
-                const parentParams = new URLSearchParams(parentUrl.search);
-                if (!currentLocationId) {
-                    currentLocationId = parentParams.get('locationId') || parentParams.get('location_id') || '';
-                }
+                const parentData = window.parent.location.search;
+                const parentParams = new URLSearchParams(parentData);
+                currentLocationId = parentParams.get('locationId') || parentParams.get('location_id') || '';
             } catch (e) {
-                console.log('Cannot access parent URL');
+                console.log('Cannot access parent frame params');
             }
         }
         
-        // Method 3: Extract from current URL path
+        // Method 3: Extract from GHL path structure
         if (!currentLocationId) {
-            const pathMatch = window.location.pathname.match(/location\/([a-zA-Z0-9]+)/);
-            if (pathMatch) {
-                currentLocationId = pathMatch[1];
+            const pathMatches = window.location.pathname.match(/locations\/([a-zA-Z0-9-]+)/);
+            if (pathMatches && pathMatches[1]) {
+                currentLocationId = pathMatches[1];
             }
         }
         
-        console.log('Location ID:', currentLocationId);
+        console.log('GHL Location ID:', currentLocationId);
         
         // Get access token from GHL session
         apiToken = await getAccessToken();
         
+        return !!currentLocationId;
     } catch (error) {
-        console.error('Context error:', error);
+        console.error('GHL Context error:', error);
+        return false;
     }
 }
 
+// GHL Token Retrieval - Optimized for GHL's auth system
 async function getAccessToken() {
-    // Try multiple methods to get the token
-    
-    // Method 1: From localStorage (GHL stores tokens here)
     try {
-        const stored = localStorage.getItem('access_token');
-        if (stored) return stored;
-    } catch (e) {}
-    
-    // Method 2: From sessionStorage
-    try {
-        const session = sessionStorage.getItem('access_token');
-        if (session) return session;
-    } catch (e) {}
-    
-    // Method 3: From cookies - try multiple possible names
-    const token = getCookie('token') || getCookie('auth_token') || getCookie('access_token');
-    if (token) return token;
-    
-    // Method 4: Make a request to get current session
-    try {
+        // GHL typically stores token in localStorage with specific key
+        const token = localStorage.getItem('token') || 
+                     localStorage.getItem('access_token') || 
+                     localStorage.getItem('ghl_token');
+        
+        if (token) {
+            console.log('Token found in localStorage');
+            return token;
+        }
+        
+        // Check cookies (GHL often uses 'token' cookie)
+        const cookieToken = getCookie('token') || getCookie('access_token');
+        if (cookieToken) {
+            console.log('Token found in cookies');
+            return cookieToken;
+        }
+        
+        // Fallback: Try GHL's internal auth endpoint
         const response = await fetch('/api/v1/users/me', {
-            credentials: 'include'
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Accept': 'application/json'
+            }
         });
+        
         if (response.ok) {
-            const authHeader = response.headers.get('Authorization');
-            if (authHeader) {
-                return authHeader.replace('Bearer ', '');
+            const data = await response.json();
+            if (data && data.token) {
+                return data.token;
             }
         }
-    } catch (e) {}
+        
+    } catch (e) {
+        console.log('Token retrieval fallback:', e.message);
+    }
     
-    console.warn('No access token found - API calls may fail');
+    console.warn('No GHL access token found - relying on session cookies');
     return '';
 }
 
@@ -91,16 +127,18 @@ function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
     if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
 }
 
-// Fetch real contacts from GHL API
-async function fetchGHLContacts(limit = 100, offset = 0) {
+// GHL API Call - Optimized for GHL's API structure
+async function fetchGHLContacts(limit = 50, offset = 0) {
     try {
-        // Build the API URL - FIXED: removed extra spaces
-        const baseUrl = 'https://services.leadconnectorhq.com';  // ✅ No trailing spaces
+        // Use GHL's services endpoint
+        const baseUrl = 'https://services.leadconnectorhq.com';
         const apiUrl = `${baseUrl}/contacts?locationId=${currentLocationId}&limit=${limit}&offset=${offset}`;
 
-        // Make the API call
+        console.log('Fetching GHL contacts:', apiUrl);
+        
         const response = await fetch(apiUrl, {
             method: 'GET',
             headers: {
@@ -112,11 +150,15 @@ async function fetchGHLContacts(limit = 100, offset = 0) {
         });
         
         if (!response.ok) {
-            console.error('API Error:', response.status, response.statusText);
+            console.error('GHL API Error:', response.status, response.statusText);
             
-            // Fallback: Try without auth header (relies on session cookies)
+            // GHL Fallback: Try relative path (uses session)
             const fallbackResponse = await fetch(`/api/v1/contacts?locationId=${currentLocationId}&limit=${limit}&offset=${offset}`, {
-                credentials: 'include'
+                method: 'GET',
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json'
+                }
             });
             
             if (fallbackResponse.ok) {
@@ -124,136 +166,129 @@ async function fetchGHLContacts(limit = 100, offset = 0) {
                 return data.contacts || [];
             }
             
-            throw new Error(`API call failed: ${response.status}`);
+            throw new Error(`GHL API failed: ${response.status} ${response.statusText}`);
         }
         
         const data = await response.json();
+        console.log('GHL Contacts fetched:', data.contacts ? data.contacts.length : 0);
         return data.contacts || [];
         
     } catch (error) {
-        console.error('Failed to fetch contacts:', error);
-        
-        // If API fails, show error message with instructions
-        showError('Unable to fetch contacts. Please ensure you have the proper permissions.');
+        console.error('GHL Contacts fetch error:', error);
+        showGHLMessage('error', 'Unable to fetch contacts. Check permissions.');
         return [];
     }
 }
 
-// Fetch all contacts with pagination
-async function fetchAllContacts() {
-    let allContacts = [];
-    let offset = 0;
-    const limit = 100;
-    let hasMore = true;
-    
-    showLoading(`Fetching contacts...`);
-    
-    while (hasMore) {
-        try {
-            const batch = await fetchGHLContacts(limit, offset);
-            
-            if (batch.length === 0) {
-                hasMore = false;
-            } else {
-                allContacts = allContacts.concat(batch);
-                offset += limit;
-                
-                // Update progress
-                showLoading(`Fetched ${allContacts.length} contacts...`);
-                if (document.getElementById('totalContacts')) {
-                    document.getElementById('totalContacts').textContent = allContacts.length;
-                }
-                
-                // Check if we have more
-                hasMore = batch.length === limit;
-            }
-        } catch (error) {
-            console.error('Error fetching batch:', error);
-            hasMore = false;
-        }
-    }
-    
-    return allContacts;
-}
-
-// Check and display field preview
+// GHL Field Preview - Properly formatted for GHL's UI
 function displayFieldPreview(contacts) {
     const fieldsList = document.getElementById('fieldsList');
-    if (!fieldsList) return;
+    if (!fieldsList) {
+        console.error('Fields list container not found');
+        return;
+    }
     
     let html = '';
     let foundCount = 0;
     
-    // Create a preview table
-    html += '<h3 style="margin-bottom: 15px;">Field Mapping Preview:</h3>';
-    html += '<table style="width: 100%; border-collapse: collapse;">';
-    html += '<thead><tr style="background: #f0f0f0;">';
-    html += '<th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Meta Field</th>';
-    html += '<th style="padding: 10px; text-align: left; border: 1px solid #ddd;">GHL Field</th>';
-    html += '<th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Status</th>';
-    html += '<th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Sample Value</th>';
-    html += '</tr></thead><tbody>';
+    // Create GHL-styled table
+    html += '<div class="ghl-field-preview">';
+    html += '<h4 style="margin-bottom: 15px; color: #333;">Field Mapping Preview</h4>';
+    html += '<div class="table-responsive">';
+    html += '<table class="table table-bordered" style="width: 100%; border-collapse: collapse; background: white;">';
+    html += '<thead style="background-color: #f8f9fa;">';
+    html += '<tr>';
+    html += '<th style="padding: 12px; text-align: left; border: 1px solid #dee2e6; font-weight: 600;">Meta Field</th>';
+    html += '<th style="padding: 12px; text-align: left; border: 1px solid #dee2e6; font-weight: 600;">GHL Field</th>';
+    html += '<th style="padding: 12px; text-align: left; border: 1px solid #dee2e6; font-weight: 600;">Status</th>';
+    html += '<th style="padding: 12px; text-align: left; border: 1px solid #dee2e6; font-weight: 600;">Sample Value</th>';
+    html += '</tr>';
+    html += '</thead>';
+    html += '<tbody>';
     
     for (const [metaField, ghlField] of Object.entries(FIELD_MAPPING)) {
         const fieldData = getFieldSample(contacts, ghlField);
         const hasField = fieldData.found;
         if (hasField) foundCount++;
         
-        html += '<tr>';
-        html += `<td style="padding: 10px; border: 1px solid #ddd;"><strong>${metaField.toUpperCase()}</strong></td>`;
-        html += `<td style="padding: 10px; border: 1px solid #ddd;">${ghlField}</td>`;
-        html += `<td style="padding: 10px; border: 1px solid #ddd;">`;
-        html += `<span style="padding: 4px 8px; border-radius: 4px; background: ${hasField ? '#d4edda' : '#f8d7da'}; color: ${hasField ? '#155724' : '#721c24'};">${hasField ? '✓ Found' : '✗ Missing'}</span>`;
+        html += '<tr style="border-bottom: 1px solid #dee2e6;">';
+        html += `<td style="padding: 10px; border: 1px solid #dee2e6;"><strong>${metaField.replace('_', ' ').toUpperCase()}</strong></td>`;
+        html += `<td style="padding: 10px; border: 1px solid #dee2e6;">${ghlField}</td>`;
+        html += `<td style="padding: 10px; border: 1px solid #dee2e6;">`;
+        html += `<span style="padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; ${
+            hasField ? 'background-color: #d4edda; color: #155724;' : 'background-color: #f8d7da; color: #721c24;'
+        }">${hasField ? '✓ Found' : '✗ Missing'}</span>`;
         html += `</td>`;
-        html += `<td style="padding: 10px; border: 1px solid #ddd; font-family: monospace; font-size: 12px;">`;
+        html += `<td style="padding: 10px; border: 1px solid #dee2e6; font-family: monospace; font-size: 11px;">`;
         if (fieldData.sample) {
-            html += `${fieldData.sample.substring(0, 30)}${fieldData.sample.length > 30 ? '...' : ''}`;
+            html += `${String(fieldData.sample).substring(0, 25)}${String(fieldData.sample).length > 25 ? '...' : ''}`;
         } else {
-            html += '<em style="color: #999;">No data</em>';
+            html += '<em style="color: #6c757d;">No data</em>';
         }
         html += `</td>`;
         html += '</tr>';
     }
     
-    html += '</tbody></table>';
+    html += '</tbody>';
+    html += '</table>';
+    html += '</div>';
     
-    // Add sample CSV preview
+    // CSV Preview
     if (contacts.length > 0 && foundCount > 0) {
-        html += '<h3 style="margin-top: 20px; margin-bottom: 15px;">Sample CSV Output (First Row):</h3>';
-        html += '<pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px;">';
+        html += '<div style="margin-top: 20px;">';
+        html += '<h4 style="margin-bottom: 10px; color: #333;">Sample CSV Output</h4>';
+        html += '<div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 12px; overflow-x: auto;">';
         
         const sampleRow = transformToMetaFormat(contacts.slice(0, 1))[0];
         if (sampleRow) {
-            // Show headers
-            html += Object.keys(FIELD_MAPPING).join(',') + '\n';
-            // Show first row data
-            html += Object.keys(FIELD_MAPPING).map(field => {
+            html += '<div>' + Object.keys(FIELD_MAPPING).join(', ') + '</div>';
+            html += '<div>' + Object.keys(FIELD_MAPPING).map(field => {
                 const value = sampleRow[field] || '';
-                return value ? `"${value.replace(/"/g, '""')}"` : '""';
-            }).join(',');
+                return value ? `"${String(value).replace(/"/g, '""')}"` : '""';
+            }).join(', ') + '</div>';
         }
         
-        html += '</pre>';
+        html += '</div>';
+        html += '</div>';
     }
     
+    html += '</div>';
+    
+    // Render the HTML
     fieldsList.innerHTML = html;
     
-    // Enable export if we have minimum fields
+    // Update counters
+    updateFieldCounters(foundCount, contacts.length);
+}
+
+function updateFieldCounters(foundCount, totalContacts) {
+    const hashedFieldsEl = document.getElementById('hashedFields');
+    const totalContactsEl = document.getElementById('totalContacts');
+    
+    if (hashedFieldsEl) {
+        hashedFieldsEl.textContent = foundCount;
+    }
+    if (totalContactsEl) {
+        totalContactsEl.textContent = totalContacts;
+    }
+    
+    // Enable/disable export button
     const exportBtn = document.getElementById('exportBtn');
     if (exportBtn) {
         exportBtn.disabled = foundCount < 1;
-    }
-    
-    if (document.getElementById('hashedFields')) {
-        document.getElementById('hashedFields').textContent = foundCount;
+        if (foundCount < 1) {
+            exportBtn.title = 'No valid fields found';
+        } else {
+            exportBtn.title = 'Export contacts to Meta';
+        }
     }
 }
 
 function getFieldSample(contacts, fieldName) {
     for (const contact of contacts) {
-        // Check custom fields array
+        // Check custom fields array (most common in GHL)
         if (contact.customFields && Array.isArray(contact.customFields)) {
-            const field = contact.customFields.find(f => f.key === fieldName || f.id === fieldName);
+            const field = contact.customFields.find(f => f.key === fieldName);
             if (field && field.value) {
                 return { found: true, sample: field.value };
             }
@@ -267,7 +302,7 @@ function getFieldSample(contacts, fieldName) {
         }
         
         // Check direct properties
-        if (contact[fieldName]) {
+        if (contact[fieldName] !== undefined && contact[fieldName] !== null) {
             return { found: true, sample: contact[fieldName] };
         }
     }
@@ -275,11 +310,9 @@ function getFieldSample(contacts, fieldName) {
     return { found: false, sample: null };
 }
 
-// Transform contacts to Meta format
 function transformToMetaFormat(contacts) {
     return contacts
         .filter(contact => {
-            // Must have at least email or phone
             const emailField = getContactField(contact, 'hashed_email');
             const phoneField = getContactField(contact, 'hashed_phone');
             return emailField || phoneField;
@@ -294,10 +327,10 @@ function transformToMetaFormat(contacts) {
 }
 
 function getContactField(contact, fieldName) {
-    // Check custom fields array
+    // Check custom fields array (GHL standard)
     if (contact.customFields && Array.isArray(contact.customFields)) {
-        const field = contact.customFields.find(f => f.key === fieldName || f.id === fieldName);
-        if (field) return field.value;
+        const field = contact.customFields.find(f => f.key === fieldName);
+        if (field && field.value) return field.value;
     }
     
     // Check custom field object
@@ -308,143 +341,141 @@ function getContactField(contact, fieldName) {
     }
     
     // Check direct properties
-    return contact[fieldName] || '';
+    if (contact[fieldName] !== undefined && contact[fieldName] !== null) {
+        return contact[fieldName];
+    }
+    
+    return '';
 }
 
-// Update the refreshFields function
+// Main refresh function
 async function refreshFields() {
-    showLoading('Fetching contact data...');
+    showGHLMessage('loading', 'Fetching contact data from GHL...');
     
     try {
-        // Get location context first
-        await getGHLContext();
+        const hasContext = await getGHLContext();
         
-        if (!currentLocationId) {
-            showError('Unable to determine location. Please try refreshing the page.');
-            hideLoading();
+        if (!hasContext || !currentLocationId) {
+            showGHLMessage('error', 'Unable to determine location context. Please refresh the page.');
             return;
         }
         
-        // Fetch sample contacts
-        const contacts = await fetchGHLContacts(20); // Get 20 samples for preview
+        const contacts = await fetchGHLContacts(20);
         
-        if (contacts.length === 0) {
-            showError('No contacts found. Please check your permissions and try again.');
-            hideLoading();
+        if (!contacts || contacts.length === 0) {
+            showGHLMessage('warning', 'No contacts found. Check your location permissions.');
+            const fieldsList = document.getElementById('fieldsList');
+            if (fieldsList) fieldsList.innerHTML = '';
+            updateFieldCounters(0, 0);
             return;
         }
         
         contactsData = contacts;
-        
-        // Display field mapping and preview
         displayFieldPreview(contacts);
-        updateStatistics(contacts);
-        
-        hideLoading();
-        showSuccess(`Found ${contacts.length} sample contacts. Ready to export!`);
+        showGHLMessage('success', `Found ${contacts.length} sample contacts. Ready to export!`);
         
     } catch (error) {
-        hideLoading();
-        showError('Failed to fetch contacts: ' + error.message);
         console.error('Refresh error:', error);
+        showGHLMessage('error', 'Failed to fetch contacts: ' + error.message);
     }
 }
 
-// Export to CSV function
+// GHL-Styled Message System
+function showGHLMessage(type, message) {
+    const messageContainer = document.getElementById('messageContainer');
+    if (!messageContainer) return;
+    
+    const alertClass = {
+        'success': 'alert-success',
+        'error': 'alert-danger',
+        'warning': 'alert-warning',
+        'loading': 'alert-info'
+    }[type] || 'alert-info';
+    
+    const icon = {
+        'success': '✓',
+        'error': '✗',
+        'warning': '⚠',
+        'loading': '↻'
+    }[type] || 'ℹ';
+    
+    messageContainer.innerHTML = `
+        <div class="alert ${alertClass} alert-dismissible fade show" role="alert" style="margin-bottom: 15px;">
+            <strong>${icon}</strong> ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    `;
+    
+    // Auto-hide success/warning messages
+    if (type === 'success' || type === 'warning') {
+        setTimeout(() => {
+            const alert = messageContainer.querySelector('.alert');
+            if (alert) {
+                alert.style.opacity = '0';
+                setTimeout(() => {
+                    if (alert.parentNode === messageContainer) {
+                        messageContainer.removeChild(alert);
+                    }
+                }, 300);
+            }
+        }, type === 'success' ? 3000 : 5000);
+    }
+}
+
+// Export function
 async function exportToMeta() {
-    showLoading('Exporting contacts...');
+    showGHLMessage('loading', 'Exporting all contacts...');
     
     try {
-        const contacts = await fetchAllContacts();
-        const rows = transformToMetaFormat(contacts);
-
+        // Fetch all contacts
+        let allContacts = [];
+        let offset = 0;
+        const limit = 100;
+        let hasMore = true;
+        
+        while (hasMore) {
+            const batch = await fetchGHLContacts(limit, offset);
+            if (batch.length === 0) {
+                hasMore = false;
+            } else {
+                allContacts = allContacts.concat(batch);
+                offset += limit;
+                showGHLMessage('loading', `Exporting... ${allContacts.length} contacts fetched`);
+            }
+        }
+        
+        const rows = transformToMetaFormat(allContacts);
+        
         if (rows.length === 0) {
-            showError('No valid contacts found for export.');
-            hideLoading();
+            showGHLMessage('warning', 'No valid contacts found for export.');
             return;
         }
-
+        
+        // Generate CSV
         const csv = [
             Object.keys(FIELD_MAPPING).join(','),
-            ...rows.map(row => Object.values(row).map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+            ...rows.map(row => 
+                Object.values(row).map(val => 
+                    `"${String(val || '').replace(/"/g, '""')}"`
+                ).join(',')
+            )
         ].join('\n');
-
+        
+        // Download CSV
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.setAttribute('href', url);
-        a.setAttribute('download', 'meta-audience-sync.csv');
+        a.setAttribute('download', `meta-audience-${new Date().toISOString().split('T')[0]}.csv`);
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-
-        hideLoading();
-        showSuccess(`Exported ${rows.length} contacts successfully!`);
-
+        
+        showGHLMessage('success', `Exported ${rows.length} contacts successfully!`);
+        
     } catch (error) {
-        hideLoading();
-        showError('Export failed: ' + error.message);
         console.error('Export error:', error);
+        showGHLMessage('error', 'Export failed: ' + error.message);
     }
 }
-
-// Utility functions for UI updates
-function showLoading(message) {
-    const loadingEl = document.getElementById('loadingMessage');
-    if (loadingEl) {
-        loadingEl.textContent = message;
-        loadingEl.style.display = 'block';
-    }
-}
-
-function hideLoading() {
-    const loadingEl = document.getElementById('loadingMessage');
-    if (loadingEl) {
-        loadingEl.style.display = 'none';
-    }
-}
-
-function showError(message) {
-    const errorEl = document.getElementById('errorMessage');
-    if (errorEl) {
-        errorEl.textContent = message;
-        errorEl.style.display = 'block';
-    }
-    setTimeout(() => {
-        if (errorEl) errorEl.style.display = 'none';
-    }, 5000);
-}
-
-function showSuccess(message) {
-    const successEl = document.getElementById('successMessage');
-    if (successEl) {
-        successEl.textContent = message;
-        successEl.style.display = 'block';
-    }
-    setTimeout(() => {
-        if (successEl) successEl.style.display = 'none';
-    }, 3000);
-}
-
-function updateStatistics(contacts) {
-    // Update any statistics display
-    if (document.getElementById('totalContacts')) {
-        document.getElementById('totalContacts').textContent = contacts.length;
-    }
-}
-
-// Initialize when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    // Add event listeners
-    const refreshBtn = document.getElementById('refreshBtn');
-    const exportBtn = document.getElementById('exportBtn');
-    
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', refreshFields);
-    }
-    
-    if (exportBtn) {
-        exportBtn.addEventListener('click', exportToMeta);
-    }
-});
