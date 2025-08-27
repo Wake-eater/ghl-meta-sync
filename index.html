@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meta Audience Export</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f8f9fa;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            color: #1a1a1a;
+            font-size: 24px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .meta-badge {
+            background: linear-gradient(135deg, #1877f2, #42b883);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #1a1a1a;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-box {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+        
+        .stat-box:hover {
+            border-color: #1877f2;
+            transform: translateY(-2px);
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1877f2;
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            font-size: 13px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .field-check-list {
+            display: grid;
+            gap: 12px;
+        }
+        
+        .field-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .field-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .field-label {
+            font-weight: 500;
+            color: #1a1a1a;
+        }
+        
+        .field-mapping {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .badge-success {
+            background: #d4f8e8;
+            color: #0e7c3a;
+        }
+        
+        .badge-error {
+            background: #ffe4e4;
+            color: #d32f2f;
+        }
+        
+        .badge-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .action-bar {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: #1877f2;
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: #1564c9;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(24, 119, 242, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #e4e6eb;
+            color: #1a1a1a;
+        }
+        
+        .btn-secondary:hover:not(:disabled) {
+            background: #d0d2d7;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.95);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .loading-overlay.active {
+            display: flex;
+        }
+        
+        .loading-content {
+            text-align: center;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #1877f2;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .alert {
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .alert.active {
+            display: block;
+        }
+        
+        .alert-success {
+            background: #d4f8e8;
+            color: #0e7c3a;
+            border: 1px solid #b2f2d5;
+        }
+        
+        .alert-error {
+            background: #ffe4e4;
+            color: #d32f2f;
+            border: 1px solid #ffcaca;
+        }
+        
+        .alert-info {
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #bbdefb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                Meta Audience Export
+                <span class="meta-badge">Custom Audiences</span>
+            </h1>
+            <p class="subtitle">Export your hashed GHL contacts for Meta/Facebook Custom Audiences</p>
+        </div>
+
+        <div class="alert alert-info" id="infoAlert">
+            ℹ️ Checking your contact fields and preparing export options...
+        </div>
+        
+        <div class="alert alert-success" id="successAlert"></div>
+        <div class="alert alert-error" id="errorAlert"></div>
+
+        <div class="card">
+            <h2 class="card-title">📊 Export Overview</h2>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-value" id="totalContacts">-</div>
+                    <div class="stat-label">Total Contacts</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="validContacts">-</div>
+                    <div class="stat-label">Valid for Export</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="hashedFields">-</div>
+                    <div class="stat-label">Hashed Fields</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="readyStatus">-</div>
+                    <div class="stat-label">Ready Status</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="card-title">🔐 Hashed Field Mapping</h2>
+            <div class="field-check-list" id="fieldsList">
+                <div class="field-row">
+                    <div class="field-info">
+                        <span class="field-label">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="action-bar" style="margin-top: 24px;">
+                <button class="btn btn-secondary" onclick="refreshFields()">
+                    🔄 Refresh Fields
+                </button>
+                <button class="btn btn-primary" id="exportBtn" onclick="startExport()" disabled>
+                    📥 Download CSV for Meta
+                </button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="card-title">📝 Instructions</h2>
+            <ol style="line-height: 1.8; color: #666;">
+                <li>Click "Refresh Fields" to check your hashed contact fields</li>
+                <li>Ensure you have at least email or phone fields hashed</li>
+                <li>Click "Download CSV for Meta" to export your contacts</li>
+                <li>Upload the CSV to Meta Ads Manager → Audiences → Create Audience → Customer List</li>
+                <li>Meta will match the hashed data with their users</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="loading-text" id="loadingText">Processing contacts...</p>
+        </div>
+    </div>
+
+    <script>
+        // Configuration for field mapping
+        const FIELD_MAPPING = {
+            'email': 'hashed_email',
+            'phone': 'hashed_phone',
+            'fn': 'hashed_firstname',
+            'ln': 'hashed_lastname',
+            'country': 'hashed_country',
+            'st': 'hashed_state',
+            'city': 'hashed_city',
+            'zip': 'hashed_zip'
+        };
+
+        let apiToken = '';
+        let currentLocationId = '';
+        let contactsData = [];
+
+        // Initialize when page loads
+        window.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+        });
+
+        async function initializeApp() {
+            try {
+                // Get GHL context
+                await getGHLContext();
+                
+                // Initial field check
+                await refreshFields();
+                
+                showInfo('Ready to export contacts. Click "Refresh Fields" to begin.');
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showError('Failed to initialize. Please refresh the page.');
+            }
+        }
+
+        async function getGHLContext() {
+            // Try to get context from URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            currentLocationId = urlParams.get('locationId') || urlParams.get('location_id') || '';
+            
+            // Try to get auth token from various sources
+            // Method 1: From parent window
+            if (window.parent && window.parent.localStorage) {
+                try {
+                    apiToken = window.parent.localStorage.getItem('auth_token') || '';
+                } catch (e) {
+                    console.log('Cannot access parent localStorage');
+                }
+            }
+            
+            // Method 2: From window.api (GHL custom modules)
+            if (window.api && window.api.token) {
+                apiToken = window.api.token;
+            }
+            
+            // Method 3: From auth cookie or session
+            if (!apiToken) {
+                // This would require backend support
+                console.log('No auth token found in client context');
+            }
+        }
+
+        async function refreshFields() {
+            showLoading('Checking contact fields...');
+            
+            try {
+                // Fetch sample contacts to check fields
+                const contacts = await fetchGHLContacts(10);
+                contactsData = contacts;
+                
+                displayFieldStatus(contacts);
+                updateStatistics(contacts);
+                
+                hideLoading();
+                showInfo(`Found ${contacts.length} contacts. Fields checked successfully.`);
+                
+            } catch (error) {
+                hideLoading();
+                showError('Failed to fetch contacts. Check your permissions.');
+                console.error(error);
+            }
+        }
+
+        async function fetchGHLContacts(limit = 100) {
+            // Simulate fetching - in production, this would call GHL API
+            // For Custom Page module, you'd need to implement proper API calls
+            
+            // Mock data for demonstration
+            return generateMockContacts(limit);
+        }
+
+        function generateMockContacts(count) {
+            const contacts = [];
+            for (let i = 0; i < count; i++) {
+                contacts.push({
+                    id: `contact_${i}`,
+                    email: `user${i}@example.com`,
+                    phone: `+1555000${String(i).padStart(4, '0')}`,
+                    firstName: `FirstName${i}`,
+                    lastName: `LastName${i}`,
+                    customFields: [
+                        { key: 'hashed_email', value: hashValue(`user${i}@example.com`) },
+                        { key: 'hashed_phone', value: hashValue(`+1555000${String(i).padStart(4, '0')}`) },
+                        { key: 'hashed_firstname', value: hashValue(`firstname${i}`.toLowerCase()) },
+                        { key: 'hashed_lastname', value: hashValue(`lastname${i}`.toLowerCase()) }
+                    ]
+                });
+            }
+            return contacts;
+        }
+
+        function hashValue(value) {
+            // This is a mock hash - Meta requires SHA256
+            // In production, ensure values are properly SHA256 hashed
+            return 'sha256_' + btoa(value).replace(/=/g, '');
+        }
+
+        function displayFieldStatus(contacts) {
+            const fieldsList = document.getElementById('fieldsList');
+            let html = '';
+            let foundCount = 0;
+            
+            for (const [metaField, ghlField] of Object.entries(FIELD_MAPPING)) {
+                const hasField = checkFieldExists(contacts, ghlField);
+                if (hasField) foundCount++;
+                
+                html += `
+                    <div class="field-row">
+                        <div class="field-info">
+                            <span class="field-label">${metaField.toUpperCase()}</span>
+                            <span class="field-mapping">→ ${ghlField}</span>
+                        </div>
+                        <span class="badge ${hasField ? 'badge-success' : 'badge-error'}">
+                            ${hasField ? '✓ Found' : '✗ Missing'}
+                        </span>
+                    </div>
+                `;
+            }
+            
+            fieldsList.innerHTML = html;
+            
+            // Enable export if we have minimum fields
+            const exportBtn = document.getElementById('exportBtn');
+            exportBtn.disabled = foundCount < 2; // Need at least email and one other field
+            
+            document.getElementById('hashedFields').textContent = foundCount;
+        }
+
+        function checkFieldExists(contacts, fieldName) {
+            return contacts.some(contact => {
+                const field = contact.customFields?.find(f => f.key === fieldName);
+                return field && field.value;
+            });
+        }
+
+        function updateStatistics(contacts) {
+            const validCount = contacts.filter(c => {
+                const emailField = c.customFields?.find(f => f.key === 'hashed_email');
+                const phoneField = c.customFields?.find(f => f.key === 'hashed_phone');
+                return emailField?.value || phoneField?.value;
+            }).length;
+            
+            document.getElementById('totalContacts').textContent = contacts.length;
+            document.getElementById('validContacts').textContent = validCount;
+            document.getElementById('readyStatus').textContent = validCount > 0 ? '✓' : '✗';
+        }
+
+        async function startExport() {
+            showLoading('Fetching all contacts...');
+            
+            try {
+                // Fetch all contacts
+                const allContacts = await fetchAllContacts();
+                
+                showLoading('Generating CSV file...');
+                
+                // Transform to Meta format
+                const csvData = transformToMetaFormat(allContacts);
+                
+                // Generate and download CSV
+                const csvContent = generateCSV(csvData);
+                downloadCSV(csvContent, `meta_audience_${Date.now()}.csv`);
+                
+                hideLoading();
+                showSuccess(`Successfully exported ${csvData.length} contacts!`);
+                
+            } catch (error) {
+                hideLoading();
+                showError('Export failed: ' + error.message);
+            }
+        }
+
+        async function fetchAllContacts() {
+            // In production, implement pagination
+            return await fetchGHLContacts(100);
+        }
+
+        function transformToMetaFormat(contacts) {
+            return contacts
+                .filter(contact => {
+                    const emailField = contact.customFields?.find(f => f.key === 'hashed_email');
+                    const phoneField = contact.customFields?.find(f => f.key === 'hashed_phone');
+                    return emailField?.value || phoneField?.value;
+                })
+                .map(contact => {
+                    const row = {};
+                    for (const [metaField, ghlField] of Object.entries(FIELD_MAPPING)) {
+                        const field = contact.customFields?.find(f => f.key === ghlField);
+                        row[metaField] = field?.value || '';
+                    }
+                    return row;
+                });
+        }
+
+        function generateCSV(data) {
+            if (data.length === 0) return '';
+            
+            const headers = Object.keys(FIELD_MAPPING);
+            const rows = [
+                headers.join(','),
+                ...data.map(row => 
+                    headers.map(h => row[h] || '').join(',')
+                )
+            ];
+            
+            return rows.join('\n');
+        }
+
+        function downloadCSV(content, filename) {
+            const blob = new Blob([content], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        // UI Helper Functions
+        function showLoading(message) {
+            document.getElementById('loadingText').textContent = message;
+            document.getElementById('loadingOverlay').classList.add('active');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.remove('active');
+        }
+
+        function showInfo(message) {
+            showAlert('infoAlert', message);
+        }
+
+        function showSuccess(message) {
+            showAlert('successAlert', message);
+        }
+
+        function showError(message) {
+            showAlert('errorAlert', message);
+        }
+
+        function showAlert(alertId, message) {
+            const alert = document.getElementById(alertId);
+            alert.textContent = message;
+            alert.classList.add('active');
+            
+            setTimeout(() => {
+                alert.classList.remove('active');
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
