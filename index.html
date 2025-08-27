@@ -1,120 +1,331 @@
-// Simplified approach for GHL Custom Pages
-// This uses the existing session since you're already inside GHL
+// Add this to your index.html script section - replaces the mock functions
 
-class GHLSimpleAPI {
-    constructor() {
-        this.locationId = this.getLocationId();
-    }
-    
-    getLocationId() {
-        // Try multiple methods to get location ID
-        
-        // Method 1: From URL
+// GHL API Integration
+async function getGHLContext() {
+    try {
+        // Method 1: Get from URL parameters
         const urlParams = new URLSearchParams(window.location.search);
-        let locationId = urlParams.get('locationId') || urlParams.get('location_id');
+        currentLocationId = urlParams.get('locationId') || urlParams.get('location_id') || '';
         
-        // Method 2: From URL path
-        if (!locationId) {
-            const pathMatch = window.location.pathname.match(/location\/([a-zA-Z0-9]+)/);
-            if (pathMatch) {
-                locationId = pathMatch[1];
-            }
-        }
-        
-        // Method 3: From parent frame
-        if (!locationId && window.parent !== window) {
+        // Method 2: Get from parent frame (if in iframe)
+        if (window.parent !== window) {
             try {
                 const parentUrl = new URL(window.parent.location.href);
-                locationId = parentUrl.searchParams.get('locationId');
-            } catch (e) {
-                console.log('Cannot access parent frame');
-            }
-        }
-        
-        console.log('Detected Location ID:', locationId);
-        return locationId;
-    }
-    
-    async fetchContacts(limit = 100, offset = 0) {
-        if (!this.locationId) {
-            throw new Error('Location ID not found. Please ensure you are accessing this from within GHL.');
-        }
-        
-        try {
-            // Try using relative API path (works if inside GHL)
-            const response = await fetch(`/api/v1/contacts?locationId=${this.locationId}&limit=${limit}&offset=${offset}`, {
-                method: 'GET',
-                credentials: 'include',
-                headers: {
-                    'Accept': 'application/json'
+                const parentParams = new URLSearchParams(parentUrl.search);
+                if (!currentLocationId) {
+                    currentLocationId = parentParams.get('locationId') || parentParams.get('location_id') || '';
                 }
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                console.log('Fetched contacts:', data);
-                return data.contacts || [];
+            } catch (e) {
+                console.log('Cannot access parent URL');
             }
-            
-            // If relative path fails, try with your OAuth credentials
-            console.log('Relative API failed, need OAuth authentication');
-            return [];
-            
-        } catch (error) {
-            console.error('API Error:', error);
-            throw error;
         }
-    }
-    
-    async testConnection() {
-        try {
-            const contacts = await this.fetchContacts(5);
-            if (contacts.length > 0) {
-                console.log('✅ API connection successful!');
-                console.log('Sample contact:', contacts[0]);
-                return true;
-            } else {
-                console.log('⚠️ API connected but no contacts found');
-                return false;
+        
+        // Method 3: Extract from current URL path
+        if (!currentLocationId) {
+            const pathMatch = window.location.pathname.match(/location\/([a-zA-Z0-9]+)/);
+            if (pathMatch) {
+                currentLocationId = pathMatch[1];
             }
-        } catch (error) {
-            console.error('❌ API connection failed:', error);
-            return false;
         }
+        
+        console.log('Location ID:', currentLocationId);
+        
+        // Get access token from GHL session
+        apiToken = await getAccessToken();
+        
+    } catch (error) {
+        console.error('Context error:', error);
     }
 }
 
-// Initialize and use
-const ghlAPI = new GHLSimpleAPI();
+async function getAccessToken() {
+    // Try multiple methods to get the token
+    
+    // Method 1: From localStorage (GHL stores tokens here)
+    try {
+        const stored = localStorage.getItem('access_token');
+        if (stored) return stored;
+    } catch (e) {}
+    
+    // Method 2: From sessionStorage
+    try {
+        const session = sessionStorage.getItem('access_token');
+        if (session) return session;
+    } catch (e) {}
+    
+    // Method 3: From cookies
+    const token = getCookie('access_token') || getCookie('auth_token');
+    if (token) return token;
+    
+    // Method 4: Make a request to get current session
+    try {
+        const response = await fetch('/api/v1/users/me', {
+            credentials: 'include'
+        });
+        if (response.ok) {
+            const authHeader = response.headers.get('Authorization');
+            if (authHeader) {
+                return authHeader.replace('Bearer ', '');
+            }
+        }
+    } catch (e) {}
+    
+    console.warn('No access token found - API calls may fail');
+    return '';
+}
 
-// Update your existing functions to use this
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+}
+
+// Fetch real contacts from GHL API
 async function fetchGHLContacts(limit = 100, offset = 0) {
     try {
-        return await ghlAPI.fetchContacts(limit, offset);
-    } catch (error) {
-        console.error('Fetch failed:', error);
+        // Build the API URL
+        const baseUrl = 'https://services.leadconnectorhq.com';
+        const apiUrl = `${baseUrl}/contacts/?locationId=${currentLocationId}&limit=${limit}&offset=${offset}`;
         
-        // Show auth instructions if needed
-        showError(`
-            Unable to fetch contacts. This may be because:
-            1. The page needs to be accessed from within GHL
-            2. OAuth authentication is required
+        // Make the API call
+        const response = await fetch(apiUrl, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${apiToken}`,
+                'Content-Type': 'application/json',
+                'Version': '2021-07-28'
+            },
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            console.error('API Error:', response.status, response.statusText);
             
-            Location ID: ${ghlAPI.locationId || 'Not detected'}
-        `);
+            // Fallback: Try without auth header (relies on session cookies)
+            const fallbackResponse = await fetch(`/api/v1/contacts?locationId=${currentLocationId}&limit=${limit}&offset=${offset}`, {
+                credentials: 'include'
+            });
+            
+            if (fallbackResponse.ok) {
+                const data = await fallbackResponse.json();
+                return data.contacts || [];
+            }
+            
+            throw new Error(`API call failed: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.contacts || [];
+        
+    } catch (error) {
+        console.error('Failed to fetch contacts:', error);
+        
+        // If API fails, show error message with instructions
+        showError('Unable to fetch contacts. Please ensure you have the proper permissions.');
         return [];
     }
 }
 
-// Test the connection on page load
-window.addEventListener('DOMContentLoaded', async function() {
-    console.log('Testing GHL API connection...');
-    const connected = await ghlAPI.testConnection();
+// Fetch all contacts with pagination
+async function fetchAllContacts() {
+    let allContacts = [];
+    let offset = 0;
+    const limit = 100;
+    let hasMore = true;
     
-    if (connected) {
-        showSuccess('Connected to GHL API successfully!');
-        refreshFields();
-    } else {
-        showError('Please ensure you are accessing this page from within GHL');
+    showLoading(`Fetching contacts...`);
+    
+    while (hasMore) {
+        try {
+            const batch = await fetchGHLContacts(limit, offset);
+            
+            if (batch.length === 0) {
+                hasMore = false;
+            } else {
+                allContacts = allContacts.concat(batch);
+                offset += limit;
+                
+                // Update progress
+                showLoading(`Fetched ${allContacts.length} contacts...`);
+                document.getElementById('totalContacts').textContent = allContacts.length;
+                
+                // Check if we have more
+                hasMore = batch.length === limit;
+            }
+        } catch (error) {
+            console.error('Error fetching batch:', error);
+            hasMore = false;
+        }
     }
-});
+    
+    return allContacts;
+}
+
+// Check and display field preview
+function displayFieldPreview(contacts) {
+    const fieldsList = document.getElementById('fieldsList');
+    let html = '';
+    let foundCount = 0;
+    
+    // Create a preview table
+    html += '<h3 style="margin-bottom: 15px;">Field Mapping Preview:</h3>';
+    html += '<table style="width: 100%; border-collapse: collapse;">';
+    html += '<thead><tr style="background: #f0f0f0;">';
+    html += '<th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Meta Field</th>';
+    html += '<th style="padding: 10px; text-align: left; border: 1px solid #ddd;">GHL Field</th>';
+    html += '<th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Status</th>';
+    html += '<th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Sample Value</th>';
+    html += '</tr></thead><tbody>';
+    
+    for (const [metaField, ghlField] of Object.entries(FIELD_MAPPING)) {
+        const fieldData = getFieldSample(contacts, ghlField);
+        const hasField = fieldData.found;
+        if (hasField) foundCount++;
+        
+        html += '<tr>';
+        html += `<td style="padding: 10px; border: 1px solid #ddd;"><strong>${metaField.toUpperCase()}</strong></td>`;
+        html += `<td style="padding: 10px; border: 1px solid #ddd;">${ghlField}</td>`;
+        html += `<td style="padding: 10px; border: 1px solid #ddd;">`;
+        html += `<span class="badge ${hasField ? 'badge-success' : 'badge-error'}">${hasField ? '✓ Found' : '✗ Missing'}</span>`;
+        html += `</td>`;
+        html += `<td style="padding: 10px; border: 1px solid #ddd; font-family: monospace; font-size: 12px;">`;
+        if (fieldData.sample) {
+            // Show first 20 chars of the hash
+            html += `${fieldData.sample.substring(0, 20)}...`;
+        } else {
+            html += '<em style="color: #999;">No data</em>';
+        }
+        html += `</td>`;
+        html += '</tr>';
+    }
+    
+    html += '</tbody></table>';
+    
+    // Add sample CSV preview
+    if (contacts.length > 0 && foundCount > 0) {
+        html += '<h3 style="margin-top: 20px; margin-bottom: 15px;">Sample CSV Output (First Row):</h3>';
+        html += '<pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px;">';
+        
+        const sampleRow = transformToMetaFormat(contacts.slice(0, 1))[0];
+        if (sampleRow) {
+            // Show headers
+            html += Object.keys(FIELD_MAPPING).join(',') + '\n';
+            // Show first row data
+            html += Object.keys(FIELD_MAPPING).map(field => {
+                const value = sampleRow[field] || '';
+                return value ? value.substring(0, 15) + '...' : '(empty)';
+            }).join(',');
+        }
+        
+        html += '</pre>';
+    }
+    
+    fieldsList.innerHTML = html;
+    
+    // Enable export if we have minimum fields
+    const exportBtn = document.getElementById('exportBtn');
+    exportBtn.disabled = foundCount < 1;
+    
+    document.getElementById('hashedFields').textContent = foundCount;
+}
+
+function getFieldSample(contacts, fieldName) {
+    for (const contact of contacts) {
+        // Check custom fields array
+        if (contact.customFields && Array.isArray(contact.customFields)) {
+            const field = contact.customFields.find(f => f.key === fieldName || f.id === fieldName);
+            if (field && field.value) {
+                return { found: true, sample: field.value };
+            }
+        }
+        
+        // Check custom field object
+        if (contact.customField && typeof contact.customField === 'object') {
+            if (contact.customField[fieldName]) {
+                return { found: true, sample: contact.customField[fieldName] };
+            }
+        }
+        
+        // Check direct properties
+        if (contact[fieldName]) {
+            return { found: true, sample: contact[fieldName] };
+        }
+    }
+    
+    return { found: false, sample: null };
+}
+
+// Transform contacts to Meta format
+function transformToMetaFormat(contacts) {
+    return contacts
+        .filter(contact => {
+            // Must have at least email or phone
+            const emailField = getContactField(contact, 'hashed_email');
+            const phoneField = getContactField(contact, 'hashed_phone');
+            return emailField || phoneField;
+        })
+        .map(contact => {
+            const row = {};
+            for (const [metaField, ghlField] of Object.entries(FIELD_MAPPING)) {
+                row[metaField] = getContactField(contact, ghlField) || '';
+            }
+            return row;
+        });
+}
+
+function getContactField(contact, fieldName) {
+    // Check custom fields array
+    if (contact.customFields && Array.isArray(contact.customFields)) {
+        const field = contact.customFields.find(f => f.key === fieldName || f.id === fieldName);
+        if (field) return field.value;
+    }
+    
+    // Check custom field object
+    if (contact.customField && typeof contact.customField === 'object') {
+        if (contact.customField[fieldName]) {
+            return contact.customField[fieldName];
+        }
+    }
+    
+    // Check direct properties
+    return contact[fieldName] || '';
+}
+
+// Update the refreshFields function
+async function refreshFields() {
+    showLoading('Fetching contact data...');
+    
+    try {
+        // Get location context first
+        await getGHLContext();
+        
+        if (!currentLocationId) {
+            showError('Unable to determine location. Please try refreshing the page.');
+            hideLoading();
+            return;
+        }
+        
+        // Fetch sample contacts
+        const contacts = await fetchGHLContacts(20); // Get 20 samples for preview
+        
+        if (contacts.length === 0) {
+            showError('No contacts found. Please check your permissions and try again.');
+            hideLoading();
+            return;
+        }
+        
+        contactsData = contacts;
+        
+        // Display field mapping and preview
+        displayFieldPreview(contacts);
+        updateStatistics(contacts);
+        
+        hideLoading();
+        showSuccess(`Found ${contacts.length} sample contacts. Ready to export!`);
+        
+    } catch (error) {
+        hideLoading();
+        showError('Failed to fetch contacts: ' + error.message);
+        console.error('Refresh error:', error);
+    }
+}
