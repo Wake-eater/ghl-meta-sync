@@ -101,41 +101,100 @@ async function makeGHLAPICall(endpoint, options = {}) {
     }
 }
 
-// Main application function
-async function main() {
-    console.log('Starting GHL custom app...');
+// Direct API calls using your working PIT token
+async function testWorkingEndpoints() {
+    console.log('Testing working endpoints with PIT token...');
+    
+    // Your working credentials
+    const PIT_TOKEN = 'pit-84c5455f-90a3-4991-b9b2-826b5c2468c1';
+    const LOCATION_ID = 'jXDdl77Ej0xMJdUeEfYo';
+    
+    const headers = {
+        'Authorization': `Bearer ${PIT_TOKEN}`,
+        'Version': '2021-07-28',
+        'Content-Type': 'application/json'
+    };
     
     try {
-        // Wait for and initialize GHL context
-        const GHL = await getGHLContext();
+        // Test 1: Get contacts list
+        console.log('Fetching contacts list...');
+        const contactsResponse = await fetch(
+            `https://services.leadconnectorhq.com/contacts/?locationId=${LOCATION_ID}`,
+            { method: 'GET', headers }
+        );
         
-        if (!GHL) {
-            throw new Error('Failed to initialize GHL context');
+        if (!contactsResponse.ok) {
+            throw new Error(`Contacts API failed: ${contactsResponse.status}`);
         }
         
-        // Test API call - Get contacts
-        console.log('Making test API call to fetch contacts...');
+        const contactsData = await contactsResponse.json();
+        console.log(`Successfully fetched ${contactsData.contacts.length} contacts`);
+        displaySuccess(`Found ${contactsData.contacts.length} contacts`);
         
-        const contactsResponse = await makeGHLAPICall('/contacts/', {
-            method: 'GET',
-            headers: {
-                'Version': '2021-07-28'
+        // Test 2: Get location info
+        console.log('Fetching location info...');
+        const locationResponse = await fetch(
+            `https://services.leadconnectorhq.com/locations/${LOCATION_ID}`,
+            { method: 'GET', headers }
+        );
+        
+        if (!locationResponse.ok) {
+            throw new Error(`Location API failed: ${locationResponse.status}`);
+        }
+        
+        const locationData = await locationResponse.json();
+        console.log('Location info:', locationData.location.name);
+        displaySuccess(`Location: ${locationData.location.name}`);
+        
+        // Test 3: Get custom fields
+        console.log('Fetching custom fields...');
+        const customFieldsResponse = await fetch(
+            `https://services.leadconnectorhq.com/custom-fields/?locationId=${LOCATION_ID}`,
+            { method: 'GET', headers }
+        );
+        
+        if (!customFieldsResponse.ok) {
+            throw new Error(`Custom Fields API failed: ${customFieldsResponse.status}`);
+        }
+        
+        const customFieldsData = await customFieldsResponse.json();
+        console.log(`Found ${customFieldsData.customFields.length} custom fields`);
+        displaySuccess(`Found ${customFieldsData.customFields.length} custom fields`);
+        
+        // Test 4: Get single contact (first contact from the list)
+        if (contactsData.contacts.length > 0) {
+            const firstContactId = contactsData.contacts[0].id;
+            console.log(`Fetching single contact: ${firstContactId}`);
+            
+            const singleContactResponse = await fetch(
+                `https://services.leadconnectorhq.com/contacts/${firstContactId}`,
+                { method: 'GET', headers }
+            );
+            
+            if (!singleContactResponse.ok) {
+                throw new Error(`Single Contact API failed: ${singleContactResponse.status}`);
             }
-        });
-        
-        console.log('Successfully fetched contacts:', contactsResponse);
-        
-        // Test API call - Get location info
-        if (GHL.locationId) {
-            console.log('Fetching location info...');
-            const locationResponse = await makeGHLAPICall(`/locations/${GHL.locationId}`, {
-                method: 'GET'
-            });
-            console.log('Location info:', locationResponse);
+            
+            const singleContactData = await singleContactResponse.json();
+            console.log('Single contact:', singleContactData.contact.firstName, singleContactData.contact.lastName);
+            displaySuccess(`Single contact: ${singleContactData.contact.firstName} ${singleContactData.contact.lastName}`);
         }
         
-        // Display success message
-        displaySuccess('GHL API integration working successfully!');
+        displaySuccess('All API tests completed successfully!');
+        
+    } catch (error) {
+        console.error('API test failed:', error);
+        displayError(`API test failed: ${error.message}`);
+    }
+}
+
+// Main application function - simplified to use direct API calls
+async function main() {
+    console.log('Starting GHL custom app with working endpoints...');
+    
+    try {
+        // Skip GHL context initialization, use direct API calls
+        await testWorkingEndpoints();
         
     } catch (error) {
         console.error('App initialization failed:', error);
