@@ -306,15 +306,29 @@ async function initializeApp() {
     }
 }
 
+// Add immediate console logs to confirm the script is loading
+console.log('=== GHL Custom App Script Loaded ===');
+console.log('Document ready state:', document.readyState);
+console.log('Current URL:', window.location.href);
+
 // Start the application when DOM is ready
 if (document.readyState === 'loading') {
+    console.log('Waiting for DOM to load...');
     document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
+    console.log('DOM already loaded, starting immediately...');
     initializeApp();
 }
 
 // Also try to initialize after a short delay in case GHL SDK loads late
-setTimeout(initializeApp, 1000);
+setTimeout(() => {
+    console.log('Running delayed initialization...');
+    initializeApp();
+}, 1000);
+
+// Force run the test immediately
+console.log('Running immediate test...');
+testWorkingEndpoints();
 
 // Debug helper function
 window.debugGHL = function() {
