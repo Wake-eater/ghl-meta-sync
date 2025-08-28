@@ -1,20 +1,470 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>GHL Test</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GHL Meta Audience Sync</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f7f9;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .container {
+            max-width: 900px;
+        }
+        .card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .alert {
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        .btn-primary, .btn-success {
+            font-weight: 600;
+            border-radius: 8px;
+        }
+        .display-4 {
+            color: #2c3e50;
+        }
+        .text-muted {
+            color: #6c757d !important;
+        }
+        .loading-spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .field-preview {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 4px 0;
+        }
+    </style>
 </head>
 <body>
-    <h1>GHL API Test</h1>
-    <div id="status">Loading...</div>
-    <button onclick="testAPI()">Test API</button>
-    
-    <script>
-        console.log('Script loaded');
-        document.getElementById('status').innerHTML = 'Script loaded successfully';
+    <div class="container my-5">
+        <div class="text-center mb-4">
+            <h1 class="mb-2">Meta Audience Sync</h1>
+            <p class="text-muted">Synchronize GHL contacts with Meta advertising audiences</p>
+        </div>
         
-        function testAPI() {
-            console.log('Button clicked');
-            document.getElementById('status').innerHTML = 'Button was clicked - JavaScript is working';
+        <div id="messageContainer"></div>
+        
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Synchronization Status</h5>
+                <div class="row text-center my-3">
+                    <div class="col-6">
+                        <h2 id="totalContacts" class="display-4 fw-bold">0</h2>
+                        <p class="text-muted">Total Contacts</p>
+                    </div>
+                    <div class="col-6">
+                        <h2 id="hashedFields" class="display-4 fw-bold">0</h2>
+                        <p class="text-muted">Fields Mapped</p>
+                    </div>
+                </div>
+                <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                    <button class="btn btn-primary" id="refreshBtn" type="button">
+                        <div class="loading-spinner" id="refreshSpinner"></div>
+                        Refresh Data
+                    </button>
+                    <button class="btn btn-success" id="exportBtn" type="button" disabled>
+                        <div class="loading-spinner" id="exportSpinner"></div>
+                        Export to Meta
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">API Connection Status</h5>
+                <div id="connectionStatus" class="mb-3">
+                    <div class="text-center text-muted mt-3">
+                        <div class="spinner-border spinner-border-sm" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        Connecting to GHL API...
+                    </div>
+                </div>
+                
+                <h6 class="mt-4">Field Mapping Preview</h6>
+                <div id="fieldsList" class="table-responsive">
+                    <p class="text-center text-muted mt-3">Click "Refresh Data" to see field mapping.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Add immediate console logs to confirm the script is loading
+        console.log('=== GHL Custom App Script Loaded ===');
+        console.log('Document ready state:', document.readyState);
+        console.log('Current URL:', window.location.href);
+        console.log('Parent window:', window.parent !== window ? 'In iframe' : 'Standalone');
+
+        // Check if we're in an iframe and handle CORS issues
+        const isInIframe = window.parent !== window;
+        const isGHLEnvironment = window.location.href.includes('gohighlevel') || 
+                                 window.location.href.includes('leadconnectorhq') ||
+                                 (window.parent && window.parent.location.href.includes('gohighlevel'));
+
+        console.log('Environment check:', { isInIframe, isGHLEnvironment });
+
+        // Configuration - Your Marketplace App Credentials
+        const CONFIG = {
+            CLIENT_ID: '68ae7013bb7027c6c3cbf9aa-metf55tl',
+            CLIENT_SECRET: '7302d8fc-ba24-4cf8-9112-586e88f8280e',
+            LOCATION_ID: 'jXDdl77Ej0xMJdUeEfYo',
+            API_BASE: 'https://services.leadconnectorhq.com',
+            REDIRECT_URI: 'https://marketplace.gohighlevel.com/oauth/',
+            // Fallback to direct API call with known working token
+            FALLBACK_TOKEN: 'pit-84c5455f-90a3-4991-b9b2-826b5c2468c1'
+        };
+
+        // Enhanced storage that works in iframes
+        const storage = {
+            get: function(key) {
+                try {
+                    if (isInIframe) {
+                        // Try sessionStorage first in iframe
+                        return sessionStorage.getItem(key) || localStorage.getItem(key);
+                    }
+                    return localStorage.getItem(key);
+                } catch (e) {
+                    console.warn('Storage access blocked:', e);
+                    // Fallback to in-memory storage
+                    return window.tempStorage ? window.tempStorage[key] : null;
+                }
+            },
+            set: function(key, value) {
+                try {
+                    if (isInIframe) {
+                        sessionStorage.setItem(key, value);
+                    } else {
+                        localStorage.setItem(key, value);
+                    }
+                } catch (e) {
+                    console.warn('Storage write blocked, using memory:', e);
+                    // Fallback to in-memory storage
+                    if (!window.tempStorage) window.tempStorage = {};
+                    window.tempStorage[key] = value;
+                }
+            },
+            remove: function(key) {
+                try {
+                    localStorage.removeItem(key);
+                    sessionStorage.removeItem(key);
+                } catch (e) {
+                    if (window.tempStorage) delete window.tempStorage[key];
+                }
+            }
+        };
+
+        // OAuth and Token Management with iframe support
+        function getAccessToken() {
+            // Check URL for code parameter (OAuth callback)
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            
+            if (code) {
+                console.log('Found OAuth code in URL, exchanging for token...');
+                exchangeCodeForToken(code);
+                return null; // Will be set after exchange
+            }
+            
+            // Check storage for existing token
+            const token = storage.get('ghl_access_token');
+            const expires = storage.get('ghl_token_expires');
+            
+            if (token && expires && Date.now() < parseInt(expires)) {
+                return token;
+            }
+            
+            // If in GHL environment and no OAuth token, try fallback
+            if (isGHLEnvironment && !token) {
+                console.log('Using fallback token for GHL environment');
+                return CONFIG.FALLBACK_TOKEN;
+            }
+            
+            // Token expired or doesn't exist
+            if (token) {
+                storage.remove('ghl_access_token');
+                storage.remove('ghl_token_expires');
+            }
+            
+            return null;
+        }
+
+        // Make API calls with CORS handling
+        async function makeAPIRequest(endpoint, options = {}) {
+            let accessToken = getAccessToken();
+            
+            if (!accessToken) {
+                throw new Error('No access token available. Need to authenticate.');
+            }
+
+            const headers = {
+                'Authorization': `Bearer ${accessToken}`,
+                'Version': '2021-07-28',
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+
+            // Use stored location ID if available
+            const storedLocationId = storage.get('ghl_location_id');
+            if (storedLocationId) {
+                CONFIG.LOCATION_ID = storedLocationId;
+            }
+
+            const url = `${CONFIG.API_BASE}${endpoint}`;
+            console.log(`Making API request to: ${url}`);
+
+            try {
+                const fetchOptions = {
+                    method: options.method || 'GET',
+                    headers,
+                    body: options.body,
+                    // Add mode for CORS in iframe
+                    mode: 'cors',
+                    credentials: 'omit'
+                };
+
+                const response = await fetch(url, fetchOptions);
+
+                if (response.status === 401) {
+                    console.log('Access token expired or invalid');
+                    
+                    // If using fallback token and it failed, try OAuth
+                    if (accessToken === CONFIG.FALLBACK_TOKEN) {
+                        throw new Error('Fallback authentication failed. Please authenticate with OAuth.');
+                    }
+                    
+                    // Try to refresh token
+                    try {
+                        accessToken = await refreshAccessToken();
+                        
+                        // Retry with new token
+                        const retryResponse = await fetch(url, {
+                            ...fetchOptions,
+                            headers: {
+                                ...headers,
+                                'Authorization': `Bearer ${accessToken}`
+                            }
+                        });
+                        
+                        if (!retryResponse.ok) {
+                            throw new Error(`API request failed after token refresh: ${retryResponse.status} ${retryResponse.statusText}`);
+                        }
+                        
+                        return await retryResponse.json();
+                        
+                    } catch (refreshError) {
+                        console.error('Token refresh failed:', refreshError);
+                        throw new Error('Authentication expired. Please re-authenticate.');
+                    }
+                }
+
+                if (!response.ok) {
+                    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error(`API request failed:`, error);
+                
+                // If CORS error in iframe, suggest workaround
+                if (error.message.includes('CORS') && isInIframe) {
+                    throw new Error('CORS blocked in iframe. Try opening in new tab or use proxy.');
+                }
+                
+                throw error;
+            }
+        }
+
+        // UI Helper Functions (simplified for iframe)
+        function showMessage(type, message) {
+            const messageContainer = document.getElementById('messageContainer');
+            const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+            const icon = type === 'success' ? '✅' : '❌';
+            
+            messageContainer.innerHTML = `
+                <div class="alert ${alertClass} alert-dismissible fade show">
+                    ${icon} ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+        }
+
+        function updateConnectionStatus(status, details = '') {
+            const connectionStatus = document.getElementById('connectionStatus');
+            let statusHTML = '';
+            
+            switch(status) {
+                case 'connected':
+                    statusHTML = `
+                        <div class="alert alert-success mb-0">
+                            <strong>✅ Connected</strong> - GHL API connection active
+                            ${details ? `<br><small>${details}</small>` : ''}
+                        </div>
+                    `;
+                    break;
+                case 'error':
+                    statusHTML = `
+                        <div class="alert alert-danger mb-0">
+                            <strong>❌ Connection Failed</strong>
+                            ${details ? `<br><small>${details}</small>` : ''}
+                            ${isInIframe ? '<br><small>Running in iframe - some restrictions may apply</small>' : ''}
+                        </div>
+                    `;
+                    break;
+                default:
+                    statusHTML = `
+                        <div class="alert alert-info mb-0">
+                            <strong>🔄 Connecting...</strong> Testing GHL API connection
+                            ${isInIframe ? '<br><small>Detected iframe environment</small>' : ''}
+                        </div>
+                    `;
+            }
+            
+            connectionStatus.innerHTML = statusHTML;
+        }
+
+        async function testConnection() {
+            console.log('Testing API connection...');
+            updateConnectionStatus('connecting');
+
+            const accessToken = getAccessToken();
+            if (!accessToken) {
+                updateConnectionStatus('error', 'No access token found. Please authenticate.');
+                addAuthenticateButton();
+                return false;
+            }
+
+            try {
+                // Test with location info first - use the endpoint that worked in Postman
+                const endpoint = `/contacts/?locationId=${CONFIG.LOCATION_ID}`;
+                console.log('Testing endpoint:', endpoint);
+                
+                const contactsData = await makeAPIRequest(endpoint);
+                console.log('API test successful:', contactsData);
+                
+                // Update UI with real data
+                document.getElementById('totalContacts').textContent = contactsData.contacts?.length || 0;
+                
+                updateConnectionStatus('connected', `Found ${contactsData.contacts?.length || 0} contacts`);
+                
+                // Enable buttons
+                document.getElementById('exportBtn').disabled = false;
+                
+                return true;
+            } catch (error) {
+                console.error('Connection test failed:', error);
+                updateConnectionStatus('error', error.message);
+                
+                if (error.message.includes('authenticate')) {
+                    addAuthenticateButton();
+                }
+                return false;
+            }
+        }
+
+        function addAuthenticateButton() {
+            const connectionStatus = document.getElementById('connectionStatus');
+            if (!connectionStatus.querySelector('.auth-button')) {
+                const authHTML = isInIframe ? 
+                    `<div class="mt-2">
+                        <button class="btn btn-primary btn-sm auth-button" onclick="window.open('https://wake-eater.github.io/ghl-meta-sync/', '_blank')">Open in New Tab</button>
+                        <small class="d-block text-muted mt-1">OAuth requires opening in new tab from iframe</small>
+                    </div>` :
+                    `<div class="mt-2">
+                        <button class="btn btn-primary btn-sm auth-button" onclick="initiateOAuth()">Authenticate with GHL</button>
+                    </div>`;
+                    
+                connectionStatus.innerHTML += authHTML;
+            }
+        }
+
+        // Simplified refresh function
+        async function refreshData() {
+            console.log('Refreshing data...');
+            const refreshBtn = document.getElementById('refreshBtn');
+            const refreshSpinner = document.getElementById('refreshSpinner');
+            
+            refreshSpinner.style.display = 'inline-block';
+            refreshBtn.disabled = true;
+
+            try {
+                const isConnected = await testConnection();
+                if (isConnected) {
+                    showMessage('success', 'Data refreshed successfully!');
+                }
+            } catch (error) {
+                console.error('Refresh failed:', error);
+                showMessage('error', `Refresh failed: ${error.message}`);
+            } finally {
+                refreshSpinner.style.display = 'none';
+                refreshBtn.disabled = false;
+            }
+        }
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, setting up event listeners...');
+
+            const refreshBtn = document.getElementById('refreshBtn');
+            const exportBtn = document.getElementById('exportBtn');
+
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', refreshData);
+            }
+
+            if (exportBtn) {
+                exportBtn.addEventListener('click', function() {
+                    showMessage('success', 'Export functionality would be implemented here!');
+                });
+            }
+
+            // Auto-run initial connection test
+            console.log('Running initial connection test...');
+            setTimeout(testConnection, 1000);
+        });
+
+        // Run immediate test
+        console.log('Script initialization complete.');
+    </script>if (exportBtn) {
+                exportBtn.addEventListener('click', exportToMeta);
+            }
+
+            // Auto-run initial connection test
+            console.log('Running initial connection test...');
+            testConnection();
+        });
+
+        // Run immediate test
+        console.log('Script initialization complete. Running immediate test...');
+        
+        // Test API immediately if DOM is ready
+        if (document.readyState === 'loading') {
+            console.log('Waiting for DOM...');
+        } else {
+            console.log('DOM ready, testing connection...');
+            setTimeout(testConnection, 500);
         }
     </script>
 </body>
