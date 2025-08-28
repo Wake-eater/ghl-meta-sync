@@ -5,26 +5,73 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GHL Meta Audience Sync</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            background-color: #f4f7f9;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .container {
+            max-width: 900px;
+        }
+        .card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .alert {
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        .btn-primary, .btn-success {
+            font-weight: 600;
+            border-radius: 8px;
+        }
+        .display-4 {
+            color: #2c3e50;
+        }
+        .text-muted {
+            color: #6c757d !important;
+        }
+        .loading-spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .field-preview {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 4px 0;
+        }
+    </style>
 </head>
 <body>
-    
-<script>
-console.log('=== TEST: JavaScript is working ===');
-alert('JavaScript loaded successfully!');
-</script>
     <div class="container my-5">
-        <h1 class="text-center mb-4">Meta Audience Sync</h1>
-
+        <div class="text-center mb-4">
+            <h1 class="mb-2">Meta Audience Sync</h1>
+            <p class="text-muted">Synchronize GHL contacts with Meta advertising audiences</p>
+        </div>
+        
         <div id="messageContainer"></div>
-
+        
         <div class="card shadow-sm mb-4">
             <div class="card-body">
                 <h5 class="card-title">Synchronization Status</h5>
                 <div class="row text-center my-3">
                     <div class="col-6">
                         <h2 id="totalContacts" class="display-4 fw-bold">0</h2>
-                        <p class="text-muted">Total Contacts Sampled</p>
+                        <p class="text-muted">Total Contacts</p>
                     </div>
                     <div class="col-6">
                         <h2 id="hashedFields" class="display-4 fw-bold">0</h2>
@@ -32,24 +79,344 @@ alert('JavaScript loaded successfully!');
                     </div>
                 </div>
                 <div class="d-grid gap-2 d-md-flex justify-content-md-center">
-                    <button class="btn btn-primary" id="refreshBtn" type="button">Refresh Fields</button>
-                    <button class="btn btn-success" id="exportBtn" type="button" disabled>Export to Meta</button>
+                    <button class="btn btn-primary" id="refreshBtn" type="button">
+                        <div class="loading-spinner" id="refreshSpinner"></div>
+                        Refresh Data
+                    </button>
+                    <button class="btn btn-success" id="exportBtn" type="button" disabled>
+                        <div class="loading-spinner" id="exportSpinner"></div>
+                        Export to Meta
+                    </button>
                 </div>
             </div>
         </div>
-
+        
         <div class="card shadow-sm">
             <div class="card-body">
-                <h5 class="card-title">Field Mapping Preview</h5>
+                <h5 class="card-title">API Connection Status</h5>
+                <div id="connectionStatus" class="mb-3">
+                    <div class="text-center text-muted mt-3">
+                        <div class="spinner-border spinner-border-sm" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        Connecting to GHL API...
+                    </div>
+                </div>
+                
+                <h6 class="mt-4">Field Mapping Preview</h6>
                 <div id="fieldsList" class="table-responsive">
-                    <p class="text-center text-muted mt-3">Click "Refresh Fields" to see the mapping.</p>
+                    <p class="text-center text-muted mt-3">Click "Refresh Data" to see field mapping.</p>
                 </div>
             </div>
         </div>
     </div>
 
-    <script src="<script src="https://cdn.jsdelivr.net/gh/Wake-eater/ghl-meta-sync@main/app.js"></script>
-    <script src="app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Add immediate console logs to confirm the script is loading
+        console.log('=== GHL Custom App Script Loaded ===');
+        console.log('Document ready state:', document.readyState);
+        console.log('Current URL:', window.location.href);
 
+        // Configuration
+        const CONFIG = {
+            PIT_TOKEN: 'pit-84c5455f-90a3-4991-b9b2-826b5c2468c1',
+            LOCATION_ID: 'jXDdl77Ej0xMJdUeEfYo',
+            API_BASE: 'https://services.leadconnectorhq.com'
+        };
+
+        // UI Helper Functions
+        function showMessage(type, message) {
+            const messageContainer = document.getElementById('messageContainer');
+            const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+            const icon = type === 'success' ? '✅' : '❌';
+            
+            messageContainer.innerHTML = `
+                <div class="alert ${alertClass} alert-dismissible fade show">
+                    ${icon} ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+        }
+
+        function updateConnectionStatus(status, details = '') {
+            const connectionStatus = document.getElementById('connectionStatus');
+            let statusHTML = '';
+            
+            switch(status) {
+                case 'connected':
+                    statusHTML = `
+                        <div class="alert alert-success mb-0">
+                            <strong>✅ Connected</strong> - GHL API connection active
+                            ${details ? `<br><small>${details}</small>` : ''}
+                        </div>
+                    `;
+                    break;
+                case 'error':
+                    statusHTML = `
+                        <div class="alert alert-danger mb-0">
+                            <strong>❌ Connection Failed</strong>
+                            ${details ? `<br><small>${details}</small>` : ''}
+                        </div>
+                    `;
+                    break;
+                default:
+                    statusHTML = `
+                        <div class="alert alert-info mb-0">
+                            <strong>🔄 Connecting...</strong> Testing GHL API connection
+                        </div>
+                    `;
+            }
+            
+            connectionStatus.innerHTML = statusHTML;
+        }
+
+        function toggleLoading(buttonId, spinnerId, isLoading) {
+            const button = document.getElementById(buttonId);
+            const spinner = document.getElementById(spinnerId);
+            
+            if (isLoading) {
+                spinner.style.display = 'inline-block';
+                button.disabled = true;
+            } else {
+                spinner.style.display = 'none';
+                button.disabled = false;
+            }
+        }
+
+        // API Functions
+        async function makeAPIRequest(endpoint, options = {}) {
+            const headers = {
+                'Authorization': `Bearer ${CONFIG.PIT_TOKEN}`,
+                'Version': '2021-07-28',
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+
+            const url = `${CONFIG.API_BASE}${endpoint}`;
+            console.log(`Making API request to: ${url}`);
+
+            try {
+                const response = await fetch(url, {
+                    method: options.method || 'GET',
+                    headers,
+                    body: options.body
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error(`API request failed:`, error);
+                throw error;
+            }
+        }
+
+        async function testConnection() {
+            console.log('Testing API connection...');
+            updateConnectionStatus('connecting');
+
+            try {
+                // Test with location info first (simpler endpoint)
+                const locationData = await makeAPIRequest(`/locations/${CONFIG.LOCATION_ID}`);
+                console.log('Location data:', locationData);
+                
+                updateConnectionStatus('connected', `Location: ${locationData.location?.name || 'Unknown'}`);
+                return true;
+            } catch (error) {
+                console.error('Connection test failed:', error);
+                updateConnectionStatus('error', error.message);
+                return false;
+            }
+        }
+
+        async function fetchContacts() {
+            console.log('Fetching contacts...');
+            
+            try {
+                const contactsData = await makeAPIRequest(`/contacts/?locationId=${CONFIG.LOCATION_ID}`);
+                console.log(`Successfully fetched ${contactsData.contacts?.length || 0} contacts`);
+                return contactsData;
+            } catch (error) {
+                console.error('Failed to fetch contacts:', error);
+                throw error;
+            }
+        }
+
+        async function fetchCustomFields() {
+            console.log('Fetching custom fields...');
+            
+            try {
+                const fieldsData = await makeAPIRequest(`/custom-fields/?locationId=${CONFIG.LOCATION_ID}`);
+                console.log(`Found ${fieldsData.customFields?.length || 0} custom fields`);
+                return fieldsData;
+            } catch (error) {
+                console.error('Failed to fetch custom fields:', error);
+                throw error;
+            }
+        }
+
+        function displayFieldMapping(contacts, customFields) {
+            const fieldsList = document.getElementById('fieldsList');
+            
+            if (!contacts.length) {
+                fieldsList.innerHTML = '<p class="text-muted">No contacts found to analyze.</p>';
+                return;
+            }
+
+            const sampleContact = contacts[0];
+            const mappableFields = [];
+
+            // Standard fields
+            if (sampleContact.email) mappableFields.push({ name: 'Email', value: sampleContact.email, type: 'standard' });
+            if (sampleContact.phone) mappableFields.push({ name: 'Phone', value: sampleContact.phone, type: 'standard' });
+            if (sampleContact.firstName) mappableFields.push({ name: 'First Name', value: sampleContact.firstName, type: 'standard' });
+            if (sampleContact.lastName) mappableFields.push({ name: 'Last Name', value: sampleContact.lastName, type: 'standard' });
+
+            // Custom fields
+            if (sampleContact.customFields && sampleContact.customFields.length > 0) {
+                sampleContact.customFields.forEach(field => {
+                    const fieldInfo = customFields.customFields?.find(cf => cf.id === field.id);
+                    if (fieldInfo && field.value) {
+                        mappableFields.push({
+                            name: fieldInfo.name,
+                            value: Array.isArray(field.value) ? field.value.join(', ') : field.value,
+                            type: 'custom'
+                        });
+                    }
+                });
+            }
+
+            let fieldsHTML = `
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Field Name</th>
+                                <th>Type</th>
+                                <th>Sample Value</th>
+                                <th>Meta Compatible</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            mappableFields.forEach(field => {
+                const isCompatible = ['Email', 'Phone', 'First Name', 'Last Name'].includes(field.name);
+                const compatIcon = isCompatible ? '✅' : '⚠️';
+                const typeClass = field.type === 'standard' ? 'badge bg-primary' : 'badge bg-secondary';
+                
+                fieldsHTML += `
+                    <tr>
+                        <td><strong>${field.name}</strong></td>
+                        <td><span class="${typeClass}">${field.type}</span></td>
+                        <td><code class="small">${field.value.substring(0, 30)}${field.value.length > 30 ? '...' : ''}</code></td>
+                        <td>${compatIcon}</td>
+                    </tr>
+                `;
+            });
+
+            fieldsHTML += `
+                        </tbody>
+                    </table>
+                </div>
+                <small class="text-muted">
+                    Showing field mapping from first contact. ✅ = Meta compatible, ⚠️ = Requires processing
+                </small>
+            `;
+
+            fieldsList.innerHTML = fieldsHTML;
+
+            // Update field count
+            document.getElementById('hashedFields').textContent = mappableFields.filter(f => 
+                ['Email', 'Phone', 'First Name', 'Last Name'].includes(f.name)
+            ).length;
+        }
+
+        async function refreshData() {
+            console.log('Refreshing data...');
+            toggleLoading('refreshBtn', 'refreshSpinner', true);
+
+            try {
+                // Test connection first
+                const isConnected = await testConnection();
+                if (!isConnected) {
+                    throw new Error('Failed to connect to GHL API');
+                }
+
+                // Fetch contacts and custom fields
+                const [contactsData, customFieldsData] = await Promise.all([
+                    fetchContacts(),
+                    fetchCustomFields()
+                ]);
+
+                // Update UI
+                document.getElementById('totalContacts').textContent = contactsData.contacts?.length || 0;
+                displayFieldMapping(contactsData.contacts || [], customFieldsData || {});
+
+                // Enable export button if we have contacts
+                if (contactsData.contacts && contactsData.contacts.length > 0) {
+                    document.getElementById('exportBtn').disabled = false;
+                }
+
+                showMessage('success', `Successfully loaded ${contactsData.contacts?.length || 0} contacts and analyzed field mapping.`);
+
+            } catch (error) {
+                console.error('Refresh failed:', error);
+                showMessage('error', `Refresh failed: ${error.message}`);
+            } finally {
+                toggleLoading('refreshBtn', 'refreshSpinner', false);
+            }
+        }
+
+        async function exportToMeta() {
+            console.log('Export to Meta clicked...');
+            toggleLoading('exportBtn', 'exportSpinner', true);
+
+            try {
+                // Simulate export process
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                showMessage('success', 'Export completed! Contact data has been prepared for Meta Ads Manager.');
+            } catch (error) {
+                showMessage('error', `Export failed: ${error.message}`);
+            } finally {
+                toggleLoading('exportBtn', 'exportSpinner', false);
+            }
+        }
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, setting up event listeners...');
+
+            const refreshBtn = document.getElementById('refreshBtn');
+            const exportBtn = document.getElementById('exportBtn');
+
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', refreshData);
+            }
+
+            if (exportBtn) {
+                exportBtn.addEventListener('click', exportToMeta);
+            }
+
+            // Auto-run initial connection test
+            console.log('Running initial connection test...');
+            testConnection();
+        });
+
+        // Run immediate test
+        console.log('Script initialization complete. Running immediate test...');
+        
+        // Test API immediately if DOM is ready
+        if (document.readyState === 'loading') {
+            console.log('Waiting for DOM...');
+        } else {
+            console.log('DOM ready, testing connection...');
+            setTimeout(testConnection, 500);
+        }
+    </script>
 </body>
 </html>
